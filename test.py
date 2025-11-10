@@ -71,7 +71,6 @@ def get_prompts_from_sheet():
             'guidelines': data[2][1] if len(data) > 2 and len(data[2]) > 1 else None,
             'debate_topic': data[3][1] if len(data) > 3 and len(data[3]) > 1 else "일반 토론",
             'rubric': data[4][1] if len(data) > 4 and len(data[4]) > 1 else None,
-            'feedback_prompt': data[5][1] if len(data) > 5 and len(data[5]) > 1 else None,
         }
 
         return prompts
@@ -236,20 +235,12 @@ default_system_message = """당신은 디베이트 클럽의 전문 토론 진�
 논리적이고 균형 잡힌 관점을 제시하며, 사용자의 의견에 대해 건설적인 반론과 질문을 제시합니다.
 항상 예의 바르고 존중하는 태도를 유지하면서도 비판적 사고를 촉진합니다."""
 
-default_feedback_prompt = """학생이 방금 한 발언에 대해 간단한 피드백을 주세요:
-1. 좋은 점 1가지
-2. 개선할 점 1가지
-3. 다음 질문 제안
-
-3-4문장으로 간결하게 답변해주세요."""
-
 system_message = sheet_prompts.get('system_message') if sheet_prompts else default_system_message
 if not system_message:
     system_message = default_system_message
 
 debate_topic = sheet_prompts.get('debate_topic') if sheet_prompts else "일반 토론"
 rubric = sheet_prompts.get('rubric') if sheet_prompts else None
-feedback_prompt = sheet_prompts.get('feedback_prompt') if sheet_prompts else default_feedback_prompt
 
 # 환영 메시지
 if sheet_prompts and sheet_prompts.get('welcome_message'):
@@ -260,15 +251,30 @@ if sheet_prompts and sheet_prompts.get('guidelines'):
     with st.expander("📝 토론 가이드라인"):
         st.markdown(sheet_prompts['guidelines'])
 
-# 학생 이름 입력
+# 학생 정보 입력
 if "student_name" not in st.session_state:
     st.session_state.student_name = ""
+if "student_class" not in st.session_state:
+    st.session_state.student_class = ""
+if "student_number" not in st.session_state:
+    st.session_state.student_number = ""
 
 if not st.session_state.student_name:
-    st.markdown("### 👤 먼저 이름을 입력해주세요")
+    st.markdown("### 👤 학생 정보를 입력해주세요")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        class_input = st.text_input("학급 (예: 1반, 2-3):", key="class_input_field")
+    with col2:
+        number_input = st.text_input("번호:", key="number_input_field")
+
     name_input = st.text_input("이름:", key="name_input_field")
-    if st.button("시작하기") and name_input:
-        st.session_state.student_name = name_input
+
+    if st.button("시작하기") and name_input and class_input and number_input:
+        st.session_state.student_class = class_input
+        st.session_state.student_number = number_input
+        st.session_state.student_name = f"{class_input}_{number_input}_{name_input}"
+        st.session_state.display_name = name_input
         st.session_state.messages = []
         st.session_state.last_save_count = 0
         st.rerun()
@@ -282,7 +288,8 @@ if "last_save_count" not in st.session_state:
     st.session_state.last_save_count = 0
 
 # 학생 정보 표시
-st.success(f"👤 {st.session_state.student_name}님, 환영합니다!")
+display_name = st.session_state.get('display_name', st.session_state.student_name)
+st.success(f"👤 {st.session_state.student_class} {st.session_state.student_number}번 {display_name}님, 환영합니다!")
 
 # 채팅 히스토리 표시
 for message in st.session_state.messages:
@@ -327,41 +334,11 @@ if prompt := st.chat_input("토론하고 싶은 주제나 의견을 입력하세
 # ==================== 사이드바 ====================
 
 with st.sidebar:
-    st.markdown(f"### 👤 {st.session_state.student_name}")
+    display_name = st.session_state.get('display_name', st.session_state.student_name)
+    st.markdown(f"### 👤 {st.session_state.student_class} {st.session_state.student_number}번")
+    st.markdown(f"**이름:** {display_name}")
     st.markdown(f"**토론 주제:** {debate_topic}")
     st.markdown(f"**메시지 수:** {len(st.session_state.messages)}")
-
-    st.markdown("---")
-
-    # 피드백 요청 버튼
-    if st.button("💬 내 의견 평가받기"):
-        if len(st.session_state.messages) > 0:
-            with st.spinner("피드백 생성 중..."):
-                try:
-                    # 최근 대화 기반 피드백
-                    recent_messages = st.session_state.messages[-6:]  # 최근 3턴
-
-                    feedback_response = client.messages.create(
-                        model="claude-sonnet-4-5-20250929",
-                        max_tokens=1024,
-                        system=system_message,
-                        messages=recent_messages + [
-                            {"role": "user", "content": feedback_prompt}
-                        ]
-                    )
-
-                    feedback = feedback_response.content[0].text
-
-                    # 피드백을 대화에 추가
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": f"📊 **피드백**\n\n{feedback}"
-                    })
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"피드백 생성 오류: {str(e)}")
-        else:
-            st.warning("먼저 토론을 시작해주세요!")
 
     st.markdown("---")
 
